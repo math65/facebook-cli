@@ -153,4 +153,106 @@ console.log('js removed-newest ok');
   assert.strictEqual(lazy.chats.length, 40); // pagination that lands after reaching the bottom is awaited
   assert.strictEqual(lazy.complete, true);
   console.log('js chats ok');
-})().catch(e => { console.error(e); process.exit(1); });
+})().then(async () => {
+  // pageLoading: Facebook's three in-flight markers, and only those
+  const spinRoot = { querySelector: s => (s.includes('progressbar') ? {} : null) };
+  const busyRoot = { querySelector: s => (s.includes('aria-busy') ? {} : null) };
+  const calmRoot = { querySelector: () => null };
+  assert.strictEqual(F.pageLoading(spinRoot), true);
+  assert.strictEqual(F.pageLoading(busyRoot), true);
+  assert.strictEqual(F.pageLoading(calmRoot), false);
+  console.log('js pageLoading ok');
+
+  const opsSrc = fs.readFileSync(path.join(__dirname, '../js/ops.js'), 'utf8');
+  const F2 = { ...F };
+  global.window = { __fb: F2 };
+  new Function(opsSrc).call(global.window);
+
+  // gather() (via F.friends): pagination that lands 1.2 s after the
+  // scroller reaches the bottom, with a progressbar up the whole time,
+  // belongs in the result. The settled-bottom exit must not fire while
+  // the page is loading, and neither may the stall tail.
+  const mkList = (total, lazyDelay) => {
+    let mounted = Math.min(total, 10), pending = null;
+    const state = { loading: false };
+    const anchor = (href, text) => ({ href, innerText: text, getAttribute: k => (k === 'href' ? href : null) });
+    const docEl = { get scrollHeight() { return mounted * 100; } };
+    const doc = {
+      documentElement: docEl, body: {},
+      querySelector: sel => {
+        if (sel.includes('progressbar')) return state.loading ? {} : null;
+        if (sel.includes('friends_mutual')) return anchor('https://www.facebook.com/friend0/friends_mutual', 'x');
+        return null;
+      },
+      querySelectorAll: sel => {
+        if (sel.includes('friends_mutual')) return Array.from({ length: mounted }, (_, i) => anchor('https://www.facebook.com/friend' + i + '/friends_mutual', '3 mutual friends'));
+        if (sel.includes('a[href]')) return Array.from({ length: mounted }, (_, i) => anchor('https://www.facebook.com/friend' + i, 'Friend ' + i));
+        return [];
+      },
+    };
+    const win = { __fb: F2, scrollY: 0, innerHeight: 500 };
+    win.scrollBy = (x, dy) => {
+      win.scrollY = Math.min(win.scrollY + dy, Math.max(0, docEl.scrollHeight - 500));
+      if (lazyDelay && win.scrollY + 500 >= docEl.scrollHeight - 2 && mounted < total && !pending) {
+        state.loading = true;
+        pending = setTimeout(() => { mounted = total; state.loading = false; pending = null; }, lazyDelay);
+      }
+    };
+    return { doc, win };
+  };
+  const runFriends = async (total, lazyDelay) => {
+    const { doc, win } = mkList(total, lazyDelay);
+    global.document = doc; global.window = win; global.innerHeight = 500;
+    const t0 = Date.now();
+    const r = await F2.friends(400);
+    return { rows: r.rows.length, elapsed: Date.now() - t0 };
+  };
+  const lazy = await runFriends(25, 1200);
+  assert.strictEqual(lazy.rows, 25, 'delayed pagination was truncated: ' + JSON.stringify(lazy));
+  const settled = await runFriends(10, 0);
+  assert.strictEqual(settled.rows, 10);
+  assert(settled.elapsed < 3000, 'a settled list should exit on the bottom test, not the stall tail: ' + settled.elapsed);
+  console.log('js gather loading ok');
+
+  // searchFriends: the chip reports aria-pressed the moment it is tapped,
+  // 1.2 s before the filtered results land. The read must wait for the
+  // results themselves; F.search is stubbed to record whether the
+  // stranger row was still on the page when the read started.
+  let stranger = true, chipLoading = false, pressed = false;
+  const chip = {
+    innerText: 'Friends',
+    getAttribute: k => (k === 'aria-pressed' ? (pressed ? 'true' : 'false') : null),
+    click: () => { pressed = true; chipLoading = true; setTimeout(() => { stranger = false; chipLoading = false; }, 1200); },
+  };
+  const feedEl = { querySelector: () => null, querySelectorAll: () => [] };
+  global.document = {
+    querySelectorAll: sel => (sel.includes('[role=button]') ? [chip] : []),
+    querySelector: sel => {
+      if (sel.includes('progressbar')) return chipLoading ? {} : null;
+      if (sel.includes('[data-stranger]')) return stranger ? {} : null;
+      if (sel.includes('[role=feed]')) return feedEl;
+      return null;
+    },
+  };
+  global.window = { __fb: F2 };
+  F2.search = async () => ({ rows: [], strangerAtRead: stranger });
+  const t0 = Date.now();
+  const sr = await F2.searchFriends(5);
+  assert.strictEqual(sr.strangerAtRead, false, 'search read results before the friends filter applied');
+  assert(Date.now() - t0 >= 1000, 'searchFriends returned before the delayed filter landed');
+  console.log('js searchFriends ok');
+
+  // atEnd: a pinned window is only the end when nothing is loading
+  let feedLoading = false;
+  global.document = {
+    documentElement: { scrollHeight: 2000 }, body: { scrollHeight: 2000 },
+    querySelector: sel => (sel.includes('progressbar') ? (feedLoading ? {} : null) : null),
+    querySelectorAll: () => [],
+  };
+  global.window = { __fb: F, scrollY: 1500, innerHeight: 500 };
+  new Function(fs.readFileSync(path.join(__dirname, '../js/feed.js'), 'utf8')).call(global.window);
+  assert.deepStrictEqual(global.window.__fbFeed.atEnd(), { bottom: true, h: 2000, loading: false });
+  feedLoading = true;
+  assert.strictEqual(global.window.__fbFeed.atEnd().loading, true);
+  console.log('js atEnd ok');
+}).catch(e => { console.error(e); process.exit(1); });

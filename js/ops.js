@@ -1,6 +1,6 @@
 (()=>{
  const F=window.__fb;
- const {sleep,clean,vtext,waitFor,canon,groupPath,profilePath,TIME,SPON,ACT,trunc,scrollerOf,num}=F;
+ const {sleep,clean,vtext,waitFor,canon,groupPath,profilePath,TIME,SPON,ACT,trunc,scrollerOf,num,pageLoading}=F;
  const main=()=>document.querySelector('[role=main]');
  const tab=s=>String(s==null?'':s).replace(/[\t\r\n]+/g,' ');
  const abs=h=>{try{const u=new URL(h,location.href);return u.pathname+u.search}catch(e){return h}};
@@ -22,13 +22,19 @@
   while(Date.now()-t0<ms){
    for(const r of collect())if(!map.has(r.k))map.set(r.k,r);
    if(map.size>=n)break;
-   if(map.size===last){if(++stall>=14)break;}else{stall=0;last=map.size;}
    const el=typeof sc==='function'?sc():sc;
    const m=metrics(el);
+   // While a load is in flight neither counter may advance: the height
+   // and row count have not moved YET, and counting those settled
+   // rechecks truncated lists whose next page was seconds out (a slow
+   // pagination response reads exactly like the end of the list). The
+   // overall ms cap still bounds a load that never finishes.
+   const loading=pageLoading(el||document);
+   if(map.size===last){if(!loading&&++stall>=14)break;}else{stall=0;last=map.size;}
    // only trust the bottom when scrolling demonstrably works on this
    // scroller (it moved, or there is nothing to scroll): a wrong scroller
    // must fall back to the stall tail, never truncate the list
-   if(m.bottom&&m.h===endH&&map.size===endSeen&&(m.pos>0||m.h<=m.clientH+2)){if(++endRounds>=3)break;}
+   if(!loading&&m.bottom&&m.h===endH&&map.size===endSeen&&(m.pos>0||m.h<=m.clientH+2)){if(++endRounds>=3)break;}
    else{endRounds=0;endH=m.h;endSeen=map.size;}
    if(el)el.scrollTop+=el.clientHeight*0.8;else window.scrollBy(0,innerHeight*0.8);
    await sleep(220);
@@ -74,13 +80,35 @@
   const chip=await waitFor(()=>[...document.querySelectorAll('[role=main] [role=button],[role=main] [role=switch],[role=main] [role=checkbox]')].find(b=>/^(Friends|Bạn bè|Amis)$/i.test(clean(b.innerText||b.getAttribute('aria-label')||''))),10000);
   let note;
   if(chip){
-   // wait for the filter to visibly apply (chip state, results swap) instead
-   // of a flat 1.8 s; the cap stays as the timeout when nothing observable
-   // changes
+   // Wait for the filter to actually apply instead of a flat 1.8 s. The
+   // chip reports aria-pressed the moment it is tapped, BEFORE the
+   // filtered results arrive — reading on chip state alone can return
+   // non-friends (reproduced upstream). What proves the filter landed is
+   // the results changing: the feed or its rows re-render, a stranger row
+   // leaves, or the result links differ. The chip state counts only with
+   // a page that has stayed quiet (nothing loading) for a sustained
+   // beat, and the cap stays as the timeout when the filter changes
+   // nothing observable (every result already a friend).
    const feedEl=document.querySelector('[role=main] [role=feed]');
    const hadStranger=!!document.querySelector('[data-stranger]');
+   const firstRow=feedEl?feedEl.querySelector('[role=article]'):null;
+   const before=new Set(feedEl?[...feedEl.querySelectorAll('a[href]')].map(a=>a.getAttribute('href')):[]);
    chip.click();
-   await waitFor(()=>chip.getAttribute('aria-pressed')==='true'||chip.getAttribute('aria-checked')==='true'||(hadStranger&&!document.querySelector('[data-stranger]'))||(feedEl&&document.querySelector('[role=main] [role=feed]')!==feedEl),1800,100);
+   const changed=()=>{
+    const f=document.querySelector('[role=main] [role=feed]');
+    if(feedEl&&f!==feedEl)return true;
+    if(hadStranger&&!document.querySelector('[data-stranger]'))return true;
+    if(firstRow&&!firstRow.isConnected)return true;
+    if(f&&before.size){const now=[...f.querySelectorAll('a[href]')].map(a=>a.getAttribute('href'));if(now.length!==before.size||now.some(h=>!before.has(h)))return true;}
+    return false;
+   };
+   let calmSince=0;
+   await waitFor(()=>{
+    if(changed())return true;
+    const pressed=chip.getAttribute('aria-pressed')==='true'||chip.getAttribute('aria-checked')==='true';
+    if(pressed&&!pageLoading()){if(!calmSince)calmSince=Date.now();return Date.now()-calmSince>=500;}
+    calmSince=0;return false;
+   },4000,100);
   }else note='friends filter not offered by facebook here; showing all people';
   const r=await F.search(n);
   if(note&&!r.err)r.note=r.note?r.note+'; '+note:note;
