@@ -172,7 +172,7 @@ These are read by the daemon when it starts. If a daemon is already running, run
 | `FB_SOCK` | unix socket path (Linux/macOS) |
 
 `fb --version` reports the installed binary version without starting the daemon.
-Release archives are published together only after CI and all five builds pass;
+Release archives are published together only after CI and all four builds pass;
 `SHA256SUMS` covers every archive.
 
 State lives in `~/.cache/fb` (`%LOCALAPPDATA%\fb` on native Windows): `refs.tsv`, `chats.tsv`, `daemon.log`.
