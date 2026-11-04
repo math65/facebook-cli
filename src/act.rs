@@ -107,8 +107,10 @@ pub async fn post(d: &Daemon, args: &[String], cwd: &str, out: &Out) -> Res<()> 
         b.goto(&t, &format!("https://www.facebook.com{profile}")).await?;
         ok(&b.eval(&t, "window.__fb.composeOpen()").await?)?;
         if !text.is_empty() {
+            ok(&b.eval(&t, "window.__fb.composeFocus()").await?)?;
             type_into(&b, &t, &text).await?;
         }
+        ok(&b.eval(&t, &format!("window.__fb.composeCheck({})", json!(text))).await?)?;
         for (name, mime, b64) in &files {
             ok(&b
                 .eval(
@@ -153,7 +155,7 @@ pub async fn post(d: &Daemon, args: &[String], cwd: &str, out: &Out) -> Res<()> 
             return Err(e);
         }
         let receipt = async {
-            ok(&b.eval(&t, "window.__fb.composePress()").await?)?;
+            ok(&b.eval(&t, &format!("window.__fb.composePress({})", json!(text))).await?)?;
             let path = tokio::time::timeout(Duration::from_secs(15), created_post(&b, &t, &uid, &mut events)).await.map_err(|_| "creation response timed out".to_string())??;
             b.goto(&t, &format!("https://www.facebook.com{path}")).await?;
             let readback = b.eval(&t, &format!("window.__fb.waitFor(()=>{{window.__fbFeed.expand();const r=window.__fb.postRoot();return r&&window.__fb.postText(r.querySelector('[data-ad-rendering-role=story_message]'))===window.__fb.clean({})}},15000)", json!(text))).await?;

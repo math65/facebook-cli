@@ -8,7 +8,7 @@ if(location.pathname==='/profile.php')history.replaceState(null,'','/fixture/');
 const read=k=>JSON.parse(localStorage.getItem(k)||'null');
 const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 let posts=read('posts')||[{id:'100',text:'Existing profile post',aud:'me'}];
-const button=(text,fn,label)=>{const b=document.createElement('div');b.role='button';b.tabIndex=0;b.textContent=text;if(label)b.setAttribute('aria-label',label);b.onclick=fn;return b};
+const button=(text,fn,label)=>{const native=read('nativePublish')&&text==='Post';const b=document.createElement(native?'button':'div');if(!native)b.role='button';b.tabIndex=0;b.textContent=text;if(label)b.setAttribute('aria-label',label);b.onclick=fn;return b};
 const dialog=()=>{const d=document.createElement('div');d.role='dialog';document.body.append(d);return d};
 function postNode(p){
  const s=document.createElement('section');s.dataset.post=p.id;if(read('recycle')==='aria')s.setAttribute('aria-posinset','1');
@@ -38,10 +38,11 @@ function postNode(p){
 function render(){main.querySelectorAll('section').forEach(x=>x.remove());const id=location.pathname.match(/\/posts\/(\d+)/)?.[1];for(const p of posts.filter(p=>(!id||p.id===id)&&!(read('oldUnmounted')&&p.id==='100'&&!read('publishAttempted'))))main.append(postNode(p));}
 function composer(){
  const d=dialog(),tb=document.createElement('div');tb.role='textbox';tb.contentEditable='true';d.append(tb);let aud='friends';
+ if(read('composerDraftText')!==null)tb.addEventListener('beforeinput',e=>{e.preventDefault();tb.innerText=read('composerDraftText')});
  const ab=button('Friends',()=>{const select=document.createElement('div');for(const [k,v]of [['public','Public'],['friends','Friends'],['me','Only me']]){const lab=document.createElement('label');lab.textContent=v;lab.onclick=()=>{aud=k};select.append(lab,document.createElement('br'))}select.append(button('Done',()=>{const replacement=ab.cloneNode(true);replacement.textContent={public:'Public',friends:'Friends',me:'Only me'}[aud];replacement.onclick=ab.onclick;ab.replaceWith(replacement);if(read('retainedAudience'))select.style.display='none';else select.remove()}));d.append(select)},'Audience. Friends');d.append(ab);
  const publish=button(read('postLabel')||'Post',async()=>{save('publishVisibility',getComputedStyle(publish).visibility);save('publishAttempted',true);let created=null;if(!read('failPublish')){created={id:String(Date.now()),text:tb.innerText,aud,receiptMode:read('receiptMode')};posts=[created,...posts];save('posts',posts)}render();await fetch('/api/graphql/',{method:'POST',body:new URLSearchParams({fb_api_req_friendly_name:'ComposerStoryCreateMutation',variables:JSON.stringify(created)})});d.remove()},read('postLabel')||'Post');if(read('publishDisabled')){const group=document.createElement('div');group.setAttribute('aria-disabled','true');group.append(publish);d.append(group);if(read('publishDisabled')==='override')publish.setAttribute('aria-disabled','false')}else d.append(publish);const mutation=read('publishMutation');if(mutation)publish.addEventListener(mutation.event,()=>{const change=()=>{if(mutation.kind==='hide')publish.style.visibility='hidden';else if(mutation.kind==='disable')publish.setAttribute('aria-disabled','true');else if(mutation.kind==='rename'){publish.textContent='Other action';publish.setAttribute('aria-label','Other action')}else if(mutation.kind==='detach')publish.remove();else if(mutation.kind==='replace')publish.replaceWith(publish.cloneNode(true))};if(mutation.queued)setTimeout(change,0);else change()},{once:true});if(read('collapsedPublish'))publish.style.visibility='collapse';if(read('trailingControl'))d.append(button('More options',()=>save('wrongPublishTarget',true)));
  const fi=document.createElement('input');fi.type='file';fi.multiple=true;fi.onchange=()=>{for(const f of fi.files){if(f.type.startsWith('video')){const v=document.createElement('video');v.src=URL.createObjectURL(f);d.append(v)}else{const img=document.createElement('img');img.src=URL.createObjectURL(f);d.append(img)}}};d.append(fi);
- tb.focus();
+ tb.focus();if(read('composerFocusMoved')){const focus=tb.focus.bind(tb);tb.focus=()=>{focus();ab.focus();tb.focus=focus}}
 }
 if(location.pathname.includes('/messages')){
  let blocked=!read('restored');
