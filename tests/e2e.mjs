@@ -21,7 +21,7 @@ const binary=path.resolve(process.env.FB||path.join(root,'target/release/fb'+(pr
 async function fb(...args){const t=performance.now();try{const r=await exec(binary,args,{env,timeout:45000,maxBuffer:1024*1024});report.push({args,ms:Math.round(performance.now()-t),stdout:r.stdout,stderr:r.stderr});return r.stdout.trim()}catch(e){report.push({args,ms:Math.round(performance.now()-t),stdout:e.stdout,stderr:e.stderr,error:e.message});throw e}}
 async function evaluate(js){return JSON.parse(await fb('eval','https://www.facebook.com/fixture',js))}
 try{
- let portInfo;for(let i=0;i<150;i++){try{portInfo=await readFile(path.join(temp,'chrome/DevToolsActivePort'),'utf8');break}catch{await new Promise(r=>setTimeout(r,100))}}
+ let portInfo;for(let i=0;i<600;i++){try{portInfo=await readFile(path.join(temp,'chrome/DevToolsActivePort'),'utf8');break}catch{await new Promise(r=>setTimeout(r,100))}}
  assert(portInfo,'Chrome started');const [port,wsPath]=portInfo.trim().split('\n');
  socket=new WebSocket('ws://127.0.0.1:'+port+wsPath);await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject});
  socket.onclose=()=>{closed=true;cancelCalls()};
