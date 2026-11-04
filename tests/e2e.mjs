@@ -29,7 +29,7 @@ try{
  socket.onmessage=async ev=>{const m=JSON.parse(ev.data);if(m.id){const p=pending.get(m.id);if(p){pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)}return}try{
   if(m.method==='Target.detachedFromTarget'){detached.add(m.params.sessionId);cancelCalls(m.params.sessionId)}
   if(m.method==='Target.attachedToTarget'){const s=m.params.sessionId;report.push({attachedTarget:{type:m.params.targetInfo.type,url:m.params.targetInfo.url,waitingForDebugger:m.params.waitingForDebugger}});await call('Fetch.enable',{patterns:[{urlPattern:'*',requestStage:'Request'}]},s);if(m.params.waitingForDebugger)await call('Runtime.runIfWaitingForDebugger',{},s)}
-  if(m.method==='Fetch.requestPaused'){const u=new URL(m.params.request.url);if(u.pathname==='/fixture/redirect-away'){await call('Fetch.fulfillRequest',{requestId:m.params.requestId,responseCode:302,responseHeaders:[{name:'Location',value:'https://example.test/login'}]},m.sessionId);return}if(u.pathname==='/fixture/cancel-start')cancelHoverStarted=true;let body=Buffer.from(['www.facebook.com','example.test'].includes(u.hostname)?fixture:'').toString('base64');if(u.pathname==='/api/graphql/'){const p=JSON.parse(new URLSearchParams(m.params.request.postData).get('variables'));const mode=p?.receiptMode;body=Buffer.from(mode==='malformed'?'not json':JSON.stringify(p?{data:{story_create:{story:{url:mode==='external'?'https://example.test/fixture/posts/'+p.id:'https://www.facebook.com/fixture/posts/'+p.id,default_actor:{id:mode==='wrongActor'?'999':'12345'}}}}}:{errors:[{message:'fixture publish failed'}]})).toString('base64')}await call('Fetch.fulfillRequest',{requestId:m.params.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:'text/html; charset=utf-8'}],body},m.sessionId)}
+  if(m.method==='Fetch.requestPaused'){const u=new URL(m.params.request.url);if(u.pathname==='/fixture/redirect-away'){await call('Fetch.fulfillRequest',{requestId:m.params.requestId,responseCode:302,responseHeaders:[{name:'Location',value:'https://example.test/login'}]},m.sessionId);return}if(u.pathname==='/fixture/cancel-start')cancelHoverStarted=true;let body=Buffer.from(['www.facebook.com','example.test'].includes(u.hostname)?fixture:'').toString('base64');if(u.pathname==='/api/graphql/'){const p=JSON.parse(new URLSearchParams(m.params.request.postData).get('variables'));const mode=p?.receiptMode;body=Buffer.from(mode==='malformed'?'not json':JSON.stringify(p&&mode?.startsWith('pending')?{data:{story_create:{story:null,story_id:mode==='pendingOpaque'?'opaque':Buffer.from('S:_I'+(mode==='pendingForeign'?'999':'12345')+':'+p.id+':'+p.id).toString('base64'),post_id:mode==='pendingOpaque'?null:p.id}}}:p?{data:{story_create:{story:{url:mode==='external'?'https://example.test/fixture/posts/'+p.id:'https://www.facebook.com/fixture/posts/'+p.id,default_actor:{id:mode==='wrongActor'?'999':'12345'}}}}}:{errors:[{message:'fixture publish failed'}]})).toString('base64')}await call('Fetch.fulfillRequest',{requestId:m.params.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:'text/html; charset=utf-8'}],body},m.sessionId)}
  }catch(e){if(!(e instanceof TargetClosed)&&!e.message.includes('Session with given id not found')&&!e.message.includes('Invalid InterceptionId'))report.push({harnessError:e.message,event:m.method,sessionId:m.sessionId||m.params.sessionId})}};
  report.push({runtime:{node:process.version,platform:process.platform,browser:await call('Browser.getVersion')}});
  await call('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:true,flatten:true});
@@ -314,8 +314,22 @@ try{
    await evaluate(`localStorage.removeItem("${flag}");localStorage.removeItem("failPublish");JSON.stringify(true)`);
   }
  });
+ await check('a pending creation is verified on its own page, or reported as pending',async()=>{
+  const clear=text=>evaluate(`localStorage.posts=JSON.stringify(JSON.parse(localStorage.posts).filter(p=>p.text!==${JSON.stringify(text)}));localStorage.removeItem("receiptMode");JSON.stringify(true)`);
+  await evaluate('localStorage.receiptMode=JSON.stringify("pending");JSON.stringify(true)');
+  assert.match(await fb('post','pending published','--to','me'),/^posted\tp\w+\t\/12345\/posts\/\d+$/);
+  await clear('pending published');
+  await evaluate('localStorage.receiptMode=JSON.stringify("pendingOpaque");JSON.stringify(true)');
+  assert.equal((await fb('post','pending unknown id','--to','me')).trim(),'pending');
+  await clear('pending unknown id');
+ });
+ await check('a post with emoji drawn as images reads back whole',async()=>{
+  const text='emoji \u{1F600} body';
+  await evaluate('localStorage.emojiImages="true";JSON.stringify(true)');
+  try{const result=await fb('post',text,'--to','me');assert.match(result,/^posted\t/);const [,ref]=result.split('\t');assert.ok((await fb('view',ref)).includes(text));await fb('delete',ref)}finally{await evaluate('localStorage.removeItem("emojiImages");JSON.stringify(true)')}
+ });
  await check('invalid creation evidence never returns a post receipt',async()=>{
-  for(const mode of ['wrongActor','external','malformed']){
+  for(const mode of ['wrongActor','external','malformed','pendingForeign']){
    await evaluate(`localStorage.receiptMode=JSON.stringify("${mode}");JSON.stringify(true)`);
    await assert.rejects(()=>fb('post','invalid receipt '+mode,'--to','me'));
    await evaluate(`localStorage.posts=JSON.stringify(JSON.parse(localStorage.posts).filter(p=>p.text!=="invalid receipt ${mode}"));localStorage.removeItem("receiptMode");JSON.stringify(true)`);

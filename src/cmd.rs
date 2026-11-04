@@ -1,6 +1,10 @@
 use crate::cdp::Res;
 use crate::daemon::{Daemon, Out};
 
+/// A pending post may be polled for a minute after Post was pressed. Timing out there would
+/// report failure for a post Facebook already accepted.
+const POST_EXTRA_SECS: u64 = 60;
+
 pub async fn run(d: &Daemon, argv: &[String], cwd: &str, out: &Out) -> Res<()> {
     // login waits for a human (Allow click, checkbox, 2FA): it has its own, longer limits
     let limit = if argv.first().map(String::as_str) == Some("login") {
@@ -18,7 +22,12 @@ pub async fn run(d: &Daemon, argv: &[String], cwd: &str, out: &Out) -> Res<()> {
         } else {
             0
         };
-        base + files * 130
+        let post = if argv.first().map(String::as_str) == Some("post") {
+            POST_EXTRA_SECS
+        } else {
+            0
+        };
+        base + files * 130 + post
     };
     match tokio::time::timeout(
         std::time::Duration::from_secs(limit),
