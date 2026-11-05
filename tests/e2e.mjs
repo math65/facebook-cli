@@ -121,8 +121,10 @@ try{
   await evaluate('localStorage.removeItem("truncateDraft");JSON.stringify(true)');
  });
  await check('post receipt, Only me, view and delete',async()=>{const result=await fb('post','fixture private post','--to','me');assert.match(result,/^posted\tp\w+\t\/.*posts\//);const ref=result.split('\t')[1];assert.equal(await evaluate('JSON.stringify(JSON.parse(localStorage.posts)[0].aud)'),'me');assert.match(await fb('view',ref),/fixture private post/);assert.match(await fb('delete',ref),/^deleted/);assert.equal(await evaluate('JSON.stringify(JSON.parse(localStorage.posts).some(x=>x.text==="fixture private post"))'),false)});
+ // A post with an author link prints an au line before its own line.
+ const firstPostRef=async()=>(await fb('posts','me','-n','1')).split('\n').find(l=>!l.startsWith('au\t')).split('\t')[0];
  await check('post reactions land, change and clear',async()=>{
-  const ref=(await fb('posts','me','-n','1')).split('\t')[0];
+  const ref=await firstPostRef();
   const state=async()=>await evaluate('JSON.stringify(String((JSON.parse(localStorage.posts).find(p=>p.id==="100")||{}).reaction??"none"))');
   assert.match(await fb('react',ref,'love'),/^reacted love/);assert.equal(await state(),'Love');
   assert.match(await fb('react',ref,'haha'),/^reacted haha/);assert.equal(await state(),'Haha');
@@ -152,7 +154,7 @@ try{
  });
  await check('post reactions wait out a slow picker',async()=>{
   await evaluate('localStorage.pickerDelay="1600";JSON.stringify(true)');
-  const ref=(await fb('posts','me','-n','1')).split('\t')[0];
+  const ref=await firstPostRef();
   assert.match(await fb('react',ref,'wow'),/^reacted wow/);
   assert.equal(await evaluate('JSON.stringify(String((JSON.parse(localStorage.posts).find(p=>p.id==="100")||{}).reaction??"none"))'),'Wow');
   await fb('react',ref,'none');
@@ -160,7 +162,7 @@ try{
  });
  await check('post reactions ignore a later decoy toolbar',async()=>{
   await evaluate('localStorage.decoyToolbar="true";JSON.stringify(true)');
-  const ref=(await fb('posts','me','-n','1')).split('\t')[0];
+  const ref=await firstPostRef();
   assert.match(await fb('react',ref,'love'),/^reacted love/);
   assert.equal(await evaluate('JSON.stringify(String((JSON.parse(localStorage.posts).find(p=>p.id==="100")||{}).reaction??"none"))'),'Love');
   await fb('react',ref,'none');
