@@ -73,8 +73,11 @@
     /* the author's own profile path: the header's first profile link (a group
        post's author link is /groups/<g>/user/<id>, which profilePath maps to
        the person; the group link itself maps to null). The author NAME is
-       not an identity: group posts merge the group name into it. */
-    const aref=[...u.querySelectorAll('a[href]')].map(a=>profilePath(a.getAttribute('href'))).find(Boolean)||'';
+       not an identity: group posts merge the group name into it. Only links
+       before the message count: a profile named there or in a comment is not
+       the author, so an unlinked author gets no ref rather than a wrong one. */
+    const headerEnd=msg||tlk||reactions;
+    const aref=[...u.querySelectorAll('a[href]')].filter(a=>!headerEnd||a.compareDocumentPosition(headerEnd)&Node.DOCUMENT_POSITION_FOLLOWING).map(a=>profilePath(a.getAttribute('href'))).find(Boolean)||'';
     /* last time source: the timestamp link's own plain text. decode() only
        reads the scrambled-span form and the visible chunks may carry no
        TIME-shaped piece at all, which left the details pane's Time line
