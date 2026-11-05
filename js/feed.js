@@ -75,7 +75,12 @@
        the person; the group link itself maps to null). The author NAME is
        not an identity: group posts merge the group name into it. */
     const aref=[...u.querySelectorAll('a[href]')].map(a=>profilePath(a.getAttribute('href'))).find(Boolean)||'';
-    out.push({pos,url,alt:alt?canon(alt):'',author:head.join(' / '),aref,time:dt&&dt.text?dt.text:(ti<0?'':ch[ti]),text:postText(msg)||attached(u),
+    /* last time source: the timestamp link's own plain text. decode() only
+       reads the scrambled-span form and the visible chunks may carry no
+       TIME-shaped piece at all, which left the details pane's Time line
+       empty (BlindFB issue #16). */
+    const linkTime=tlk&&!dt?clean(tlk.innerText):'';
+    out.push({pos,url,alt:alt?canon(alt):'',author:head.join(' / '),aref,time:dt&&dt.text?dt.text:(ti<0?linkTime:ch[ti]),text:postText(msg)||attached(u),
       r:num(g(u,'like_button')),c:num(g(u,'comment_button')),s:num(g(u,'share_button')),
       ad:ch.slice(0,12).some(c=>SPON.test(c)),hover});
     if(url||!hover)continue;

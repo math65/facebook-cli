@@ -372,4 +372,25 @@ console.log('js removed-newest ok');
   assert.strictEqual(stepped[0].author, 'Michal Suchy / Odyssey Group');
   assert.strictEqual(stepped[0].aref, '/profile.php?id=456');
   console.log('js feed author ref ok');
+
+  // feed step: when neither the scrambled-span decode nor the visible
+  // chunks carry a time, the timestamp link's own text is the time
+  // (BlindFB issue #16: the details pane's Time line came out empty)
+  const timeAnchor = {
+    getAttribute: n => (n === 'href' ? 'https://www.facebook.com/alice/posts/999' : null),
+    innerText: 'November 3 at 5:30 PM', focus() {}, blur() {},
+  };
+  const profileEl2 = { innerText: 'Alice', querySelector: () => null, closest: () => null };
+  const card2 = {
+    querySelector: sel => (sel.includes('profile_name') ? profileEl2 : sel.includes('story_message') ? msgEl : null),
+    querySelectorAll: sel => (sel === 'a[href]' ? [timeAnchor] : sel.includes('profile_name') ? [profileEl2] : []),
+    getAttribute: () => null,
+  };
+  const F4 = { ...F, postCards: () => [card2], postText: () => 'Hello world', vtext: () => ['Alice', 'Hello world'], num: () => '0', visible: () => true };
+  global.window = { __fb: F4 };
+  new Function(fs.readFileSync(path.join(__dirname, '../js/feed.js'), 'utf8')).call(global.window);
+  const stepped2 = await global.window.__fbFeed.step();
+  assert.strictEqual(stepped2.length, 1);
+  assert.strictEqual(stepped2[0].time, 'November 3 at 5:30 PM');
+  console.log('js feed time fallback ok');
 }).catch(e => { console.error(e); process.exit(1); });
