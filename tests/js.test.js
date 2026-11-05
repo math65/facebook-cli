@@ -124,6 +124,7 @@ console.log('js groupPath ok');
 assert.strictEqual(F.profilePath('https://www.facebook.com/some.user'), '/some.user');
 assert.strictEqual(F.profilePath('/profile.php?id=123&sk=about'), '/profile.php?id=123');
 assert.strictEqual(F.profilePath('https://www.facebook.com/groups/123456'), null);
+assert.strictEqual(F.profilePath('https://www.facebook.com/groups/123456/user/789/'), '/profile.php?id=789');
 assert.strictEqual(F.profilePath('https://www.facebook.com/some.user/posts/456'), null);
 assert.strictEqual(F.profilePath('https://www.facebook.com/watch?v=1'), null);
 assert.strictEqual(F.profilePath('https://www.facebook.com/photo.php?fbid=1'), null);
@@ -347,4 +348,28 @@ console.log('js removed-newest ok');
   feedLoading = true;
   assert.strictEqual(global.window.__fbFeed.atEnd().loading, true);
   console.log('js atEnd ok');
+
+  // feed step: a group post's author ref is the poster's profile path, not
+  // the group link, and not the group name merged into the author name
+  const anchor = href => ({ getAttribute: n => (n === 'href' ? href : null) });
+  const userAnchor = anchor('https://www.facebook.com/groups/123/user/456/');
+  const profileEl = { innerText: 'Michal Suchy', querySelector: sel => (sel === 'a' ? userAnchor : null), closest: () => null };
+  const msgEl = { querySelectorAll: () => [] };
+  const card = {
+    querySelector: sel => (sel.includes('profile_name') ? profileEl : sel.includes('story_message') ? msgEl : null),
+    querySelectorAll: sel => (sel === 'a[href]'
+      ? [anchor('https://www.facebook.com/groups/123'), userAnchor, anchor('https://www.facebook.com/groups/123/posts/999')]
+      : sel.includes('profile_name') ? [profileEl] : []),
+    getAttribute: () => null,
+  };
+  const F3 = { ...F, postCards: () => [card], postText: () => 'Hello group', vtext: () => ['Michal Suchy', 'Odyssey Group', '2h'], num: () => '0', visible: () => true };
+  global.document = { createTreeWalker: () => ({ nextNode: () => null }), querySelectorAll: () => [], querySelector: () => null };
+  global.NodeFilter = { SHOW_TEXT: 4 };
+  global.window = { __fb: F3 };
+  new Function(fs.readFileSync(path.join(__dirname, '../js/feed.js'), 'utf8')).call(global.window);
+  const stepped = await global.window.__fbFeed.step();
+  assert.strictEqual(stepped.length, 1);
+  assert.strictEqual(stepped[0].author, 'Michal Suchy / Odyssey Group');
+  assert.strictEqual(stepped[0].aref, '/profile.php?id=456');
+  console.log('js feed author ref ok');
 }).catch(e => { console.error(e); process.exit(1); });

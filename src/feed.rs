@@ -11,6 +11,10 @@ use tokio::sync::{Mutex, Notify};
 #[derive(Clone, Debug, Default)]
 pub struct Post {
     pub author: String,
+    /// The author's profile path (/vanity or /profile.php?id=), when the card
+    /// linked one. Group posts merge the group name into `author`, so the
+    /// name alone cannot resolve the person; this path can.
+    pub author_ref: String,
     pub time: String,
     pub stats: String,
     pub text: String,
@@ -29,11 +33,22 @@ fn format_post(d: &Daemon, p: &Post, urls: bool) -> String {
     };
     let ad = if p.ad { " [ad]" } else { "" };
     format!(
-        "{id}\t{}{ad}\t{}\t{}\t{text}",
+        "{}{id}\t{}{ad}\t{}\t{}\t{text}",
+        author_ref_prefix(&p.author_ref),
         one_line(&p.author),
         one_line(&p.time),
         p.stats
     )
+}
+
+/// The line that carries a post's author profile path, printed before the
+/// post line itself (the same prefix-line shape as a comment's `cu` line).
+fn author_ref_prefix(author_ref: &str) -> String {
+    if author_ref.is_empty() {
+        String::new()
+    } else {
+        format!("au\t{}\n", one_line(author_ref))
+    }
 }
 
 /// A wedged Chrome call must end the pump (so the next `fb feed` can start a new one), not hang it.
@@ -100,6 +115,7 @@ async fn resolve(b: &Browser, t: &Tab, p: &Value) -> Res<Option<Post>> {
     let s = |k: &str| p[k].as_str().unwrap_or("").to_string();
     Ok(Some(Post {
         author: s("author"),
+        author_ref: s("aref"),
         time: s("time"),
         stats: format!(
             "{}/{}/{}",
@@ -410,4 +426,23 @@ pub async fn feed(d: &Daemon, args: &[String], out: &Out) -> Res<()> {
         out.line(format_post(d, &p, urls));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::author_ref_prefix;
+
+    #[test]
+    fn author_ref_prefix_carries_the_profile_path() {
+        assert_eq!(
+            author_ref_prefix("/profile.php?id=456"),
+            "au\t/profile.php?id=456\n"
+        );
+        assert_eq!(author_ref_prefix("/some.user"), "au\t/some.user\n");
+    }
+
+    #[test]
+    fn author_ref_prefix_is_empty_without_a_ref() {
+        assert_eq!(author_ref_prefix(""), "");
+    }
 }
