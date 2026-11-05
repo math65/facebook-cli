@@ -14,7 +14,7 @@ jobs:
         include:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, asset: fb-x86_64-linux }
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, asset: fb-aarch64-linux }
-          - { os: macos-26, target: aarch64-apple-darwin, asset: fb-aarch64-darwin }
+          - { os: macos-15, target: aarch64-apple-darwin, asset: fb-aarch64-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, asset: fb-x86_64-windows }
     runs-on: ${{ matrix.os }}
     steps:
