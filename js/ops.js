@@ -127,7 +127,7 @@
     const p=stripQ(a.getAttribute('href'));
     const chunks=vtext(a).map(clean).filter(Boolean);
     if(!chunks.length)continue;
-    const price=chunks.find(c=>/^[$€£¥]|^(Free|Miễn phí)$/i.test(c))||'';
+    const price=chunks.find(c=>/^[$€£¥]|^[\d.,\s \u202f]+[$€£¥]$|^(Free|Miễn phí|Gratuit)$/i.test(c))||'';
     const rest=chunks.filter(c=>c!==price);
     if(!byPath.has(p))byPath.set(p,{title:rest[0]||'',price,loc:rest.slice(1).join(' · ')});
    }
